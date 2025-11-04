@@ -1,7 +1,7 @@
 pipeline {
     agent {
         kubernetes {
-            label 'user-service-pod'
+            label 'app-pod'
             defaultContainer 'docker'
             yaml """
 apiVersion: v1
@@ -12,7 +12,7 @@ metadata:
 spec:
   serviceAccountName: jenkins-sa
   nodeSelector:
-    kubernetes.io/hostname: worker
+    kubernetes.io/hostname: workerserver
   containers:
   - name: docker
     image: docker:24-dind
@@ -38,7 +38,7 @@ spec:
         stage('Clone Repo') {
             steps {
                 container('docker') {
-                    git branch: 'main', url: 'https://github.com/laurisseau/user-service'
+                    git branch: 'main', url: 'https://github.com/laurisseau/app-dev'
                 }
             }
         }
@@ -48,7 +48,7 @@ spec:
                 container('docker') {
                     script {
                         // Mark workspace as safe for Git
-                        sh 'git config --global --add safe.directory /home/jenkins/agent/workspace/user-service-pipeline'
+                        sh 'git config --global --add safe.directory /home/jenkins/agent/workspace/app-ci-pipeline'
         
                         // Get short Git commit SHA
                         def commitSHA = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
@@ -70,7 +70,7 @@ spec:
 sleep 5
 
 # Build Docker image
-docker build -f Dockerfile -t user-service-image:${IMAGE_TAG} .
+docker build -f Dockerfile -t dev-app:${IMAGE_TAG} .
 docker images
 """
                 }
@@ -83,7 +83,7 @@ docker images
                     withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', 
                                       credentialsId: 'pipeline-aws-cred']]) {
                         sh """
-# Install AWS CLI, Bash, Helm, and Python
+# Install AWS CLI, Bash, and Python
 apk add --no-cache curl python3 py3-pip aws-cli bash gnupg ca-certificates tar
 
 # Install kubectl
@@ -91,13 +91,7 @@ curl -LO https://storage.googleapis.com/kubernetes-release/release/\$(curl -s ht
 chmod +x ./kubectl
 mv ./kubectl /usr/local/bin
 
-# Install Helm
-curl -fsSL https://get.helm.sh/helm-v3.16.2-linux-amd64.tar.gz -o helm.tar.gz
-tar -zxvf helm.tar.gz
-mv linux-amd64/helm /usr/local/bin
-
 # Verify installs
-helm version
 kubectl version --client
 aws --version
 
@@ -106,14 +100,14 @@ kubectl create secret docker-registry user-service-secret \
   --docker-server=${ECR_REGISTRY} \
   --docker-username=AWS \
   --docker-password="\$(aws ecr get-login-password --region ${AWS_REGION})" \
-  --namespace sportsify-ns \
+  --namespace dev-app \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Authenticate Docker with ECR
 aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
 
 # Tag Docker image for ECR
-docker tag user-service-image:${IMAGE_TAG} ${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+docker tag dev-app:${IMAGE_TAG} ${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
 
 # Push Docker image to ECR
 docker push ${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
