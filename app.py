@@ -3,7 +3,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return 'Hello, World! ci '
+    return 'Hello, World! ci'
 
 if __name__ == '__main__':
     # Listen on all network interfaces (important for Docker/Kubernetes)
